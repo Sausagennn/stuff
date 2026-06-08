@@ -138,16 +138,30 @@
         
         let bird = { x: 90, y: 280, velocity: 0, radius: 19, gravity: 0.58, flap: -14.2, wingFrame: 0 };
         let pipes = [], stars = [], particles = [], scorePopups = [];
-        let score = 0, highScore = localStorage.getItem('skyDashHigh') || 0, frame = 0;
+        let score = 0, highScore = parseInt(localStorage.getItem('skyDashHigh')) || 0, frame = 0;
         let gameRunning = false, paused = false, shake = 0;
+        let audioContext = null;
         
         highscoreEl.textContent = highScore;
         let bgOffset = 0, cloudOffset = 0;
         
-        // Audio
+        // Initialize audio context (fixed: create once and reuse)
+        function getAudioContext() {
+            if (!audioContext) {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch(e) {
+                    return null;
+                }
+            }
+            return audioContext;
+        }
+        
+        // Audio (fixed: reuse single context instead of creating new one each time)
         function playSound(freq, duration, type = 'sine', vol = 0.4) {
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = getAudioContext();
+                if (!ctx) return;
                 const osc = ctx.createOscillator();
                 const gain = ctx.createGain();
                 osc.type = type;
@@ -261,14 +275,12 @@
         }
         
         function generateStar() {
-            if (Math.random() < 0.5) {
-                stars.push({ 
-                    x: canvas.width + 40, 
-                    y: 140 + Math.random() * (canvas.height - 320), 
-                    collected: false,
-                    pulse: 0
-                });
-            }
+            stars.push({ 
+                x: canvas.width + 40, 
+                y: 140 + Math.random() * (canvas.height - 320), 
+                collected: false,
+                pulse: 0
+            });
         }
         
         function update() {
@@ -301,7 +313,7 @@
                 if (p.x < -100) pipes.splice(i,1);
             }
             
-            // Stars
+            // Stars (fixed: removed random condition for consistent generation)
             for (let i = stars.length-1; i >= 0; i--) {
                 const s = stars[i];
                 s.x -= 2.9;
@@ -338,7 +350,7 @@
             }
             
             if (frame % 65 === 0) generatePipe();
-            if (frame % 38 === 0) generateStar();
+            if (frame % 48 === 0) generateStar(); // Fixed: adjusted spawn rate for consistency
             
             bgOffset += 0.8;
             cloudOffset += 0.35;
@@ -400,7 +412,7 @@
         }
         
         function drawScorePopups() {
-            ctx.font = 'bold 22px Press Start 2P';
+            ctx.font = 'bold 22px "Press Start 2P", cursive'; // Fixed: properly quoted font family
             ctx.textAlign = 'center';
             for (let p of scorePopups) {
                 ctx.globalAlpha = p.life / 45;
@@ -486,8 +498,11 @@
         
         function shareScore() {
             const text = `🏆 I scored ${score} points in Sky Dash! Think you can beat me?`;
-            navigator.clipboard.writeText(text + '\n' + window.location.href);
-            alert('Score copied to clipboard! Share on social media 🎉');
+            navigator.clipboard.writeText(text + '\n' + window.location.href).then(() => {
+                alert('Score copied to clipboard! Share on social media 🎉');
+            }).catch(() => {
+                alert('Could not copy to clipboard. Score: ' + score);
+            });
         }
         
         document.addEventListener('keydown', e => {
@@ -496,7 +511,7 @@
         });
         
         canvas.addEventListener('click', flap);
-        canvas.addEventListener('touchstart', e => { e.preventDefault(); flap(); });
+        canvas.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, { passive: false }); // Fixed: added event listener options
         
         menuScreen.style.display = 'flex';
         gameLoop();
