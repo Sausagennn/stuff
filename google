@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⭐ SKY DASH 3D ⭐</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        body {
+            margin: 0; padding: 0; overflow: hidden; background: #000;
+            font-family: 'Press Start 2P', cursive;
+            color: white;
+            text-align: center;
+        }
+        #ui {
+            position: absolute; top: 10px; left: 0; right: 0; z-index: 100;
+            display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;
+        }
+        .score { 
+            background: rgba(0,255,204,0.2); 
+            padding: 10px 20px; 
+            border: 3px solid #00ffcc; 
+            border-radius: 10px; 
+            text-shadow: 0 0 10px #00ffcc;
+        }
+        #gameOver, #menu {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(10,10,40,0.95); padding: 40px; border: 6px solid #00ffcc;
+            border-radius: 20px; z-index: 200; display: none; flex-direction: column; gap: 15px;
+            box-shadow: 0 0 30px #00ffcc;
+        }
+        button {
+            padding: 15px 40px; 
+            font-family: 'Press Start 2P', cursive; 
+            background: #ff0066;
+            color: white; 
+            border: none; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            font-size: 1.1rem;
+            box-shadow: 0 0 15px #ff0066;
+            transition: all 0.1s;
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        h1, h2 {
+            text-shadow: 0 0 15px #00ffcc;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div class="score">SCORE: <span id="score">0</span></div>
+        <div class="score">COINS: <span id="coins">0</span></div>
+    </div>
+
+    <div id="menu">
+        <h1 style="color:#00ffcc; margin:0;">SKY DASH 3D</h1>
+        <p style="margin:10px 0; color:#aaffff;">Tap / Click / Space to flap</p>
+        <button onclick="startGame()">START GAME</button>
+    </div>
+
+    <div id="gameOver">
+        <h2 style="color:#ff3366; margin:10px 0;">CRASHED!</h2>
+        <p>SCORE: <span id="finalScore">0</span></p>
+        <p>COINS: <span id="finalCoins">0</span></p>
+        <button onclick="restartGame()">PLAY AGAIN</button>
+    </div>
+
+    <script>
+        // Scene Setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x0a0a2e);
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xaaaaaa, 0.7);
+        scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        directionalLight.position.set(10, 30, 20);
+        scene.add(directionalLight);
+
+        // Background fog
+        scene.fog = new THREE.Fog(0x0a0a2e, 30, 80);
+
+        // Bird - improved with wings
+        const birdGroup = new THREE.Group();
+        const birdBody = new THREE.Mesh(
+            new THREE.SphereGeometry(1.2, 32, 32),
+            new THREE.MeshPhongMaterial({ color: 0xffeb3b, emissive: 0xffaa00, shininess: 100 })
+        );
+        birdGroup.add(birdBody);
+
+        // Simple wings
+        const wingGeo = new THREE.BoxGeometry(2.2, 0.4, 1.8);
+        const wingMat = new THREE.MeshPhongMaterial({ color: 0xff8800 });
+        const leftWing = new THREE.Mesh(wingGeo, wingMat);
+        leftWing.position.set(0, 0, 1.2);
+        leftWing.rotation.y = 0.6;
+        birdGroup.add(leftWing);
+        const rightWing = leftWing.clone();
+        rightWing.position.z = -1.2;
+        rightWing.rotation.y = -0.6;
+        birdGroup.add(rightWing);
+
+        scene.add(birdGroup);
+
+        camera.position.set(0, 6, 18);
+        camera.lookAt(0, 5, 0);
+
+        let velocity = 0;
+        let score = 0;
+        let coinsCollected = 0;
+        let gameRunning = false;
+        let pipes = [];
+        let coins = [];
+        let frame = 0;
+        let flapCooldown = 0;
+
+        function createPipe() {
+            const height = Math.random() * 7 + 5;
+            const gap = 6.8;
+            const x = 35;
+
+            // Top pipe
+            const topHeight = height;
+            const topGeo = new THREE.BoxGeometry(4.5, topHeight, 4.5);
+            const pipeMat = new THREE.MeshPhongMaterial({ 
+                color: 0x22c55e, 
+                emissive: 0x115522,
+                shininess: 10 
+            });
+            const topPipe = new THREE.Mesh(topGeo, pipeMat);
+            topPipe.position.set(x, 5 + topHeight / 2, 0);
+            scene.add(topPipe);
+
+            // Bottom pipe
+            const bottomHeight = 25;
+            const bottomPipe = new THREE.Mesh(
+                new THREE.BoxGeometry(4.5, bottomHeight, 4.5), 
+                pipeMat
+            );
+            bottomPipe.position.set(x, -12 + (height + gap), 0);
+            scene.add(bottomPipe);
+
+            const pipeObj = { 
+                top: topPipe, 
+                bottom: bottomPipe, 
+                x: x, 
+                passed: false,
+                height: height,
+                gapStart: height + gap
+            };
+            pipes.push(pipeObj);
+
+            // Create coin in the gap
+            if (Math.random() > 0.3) {
+                const coinGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.4, 32);
+                const coinMat = new THREE.MeshPhongMaterial({ 
+                    color: 0xffd700, 
+                    emissive: 0xffaa00,
+                    shininess: 100 
+                });
+                const coin = new THREE.Mesh(coinGeo, coinMat);
+                coin.rotation.x = Math.PI / 2;
+                coin.position.set(x, height + gap/2 + 1, 0);
+                scene.add(coin);
+                coins.push({ mesh: coin, x: x, collected: false });
+            }
+        }
+
+        function update() {
+            if (!gameRunning) return;
+            frame++;
+
+            // Gravity
+            velocity += 0.28;
+            birdGroup.position.y -= velocity * 0.18;
+
+            // Clamp bird position
+            if (birdGroup.position.y > 25) birdGroup.position.y = 25;
+            if (birdGroup.position.y < -8) {
+                endGame();
+                return;
+            }
+
+            // Bird rotation
+            const targetRot = Math.max(Math.min(velocity * 0.09, 1.4), -0.9);
+            birdGroup.rotation.z = birdGroup.rotation.z * 0.85 + targetRot * 0.15;
+
+            // Gentle wing flap animation
+            const wingAngle = Math.sin(frame * 0.3) * 0.3;
+            birdGroup.children[1].rotation.z = wingAngle; // left wing
+            birdGroup.children[2].rotation.z = -wingAngle; // right wing
+
+            // Update pipes
+            for (let i = pipes.length - 1; i >= 0; i--) {
+                const p = pipes[i];
+                p.x -= 0.42;
+                p.top.position.x = p.x;
+                p.bottom.position.x = p.x;
+
+                // Score
+                if (!p.passed && p.x < 0) {
+                    p.passed = true;
+                    score += 10;
+                    document.getElementById('score').textContent = score;
+                }
+
+                // Collision
+                const birdY = birdGroup.position.y;
+                const birdR = 1.8;
+                const xDist = Math.abs(p.x);
+
+                if (xDist < 4.5) {
+                    const topBottomY = p.top.position.y - p.top.geometry.parameters.height / 2;
+                    const bottomTopY = p.bottom.position.y + p.bottom.geometry.parameters.height / 2;
+
+                    if (birdY + birdR > topBottomY || birdY - birdR < bottomTopY) {
+                        endGame();
+                        return;
+                    }
+                }
+
+                // Cleanup
+                if (p.x < -25) {
+                    scene.remove(p.top);
+                    scene.remove(p.bottom);
+                    pipes.splice(i, 1);
+                }
+            }
+
+            // Update coins
+            for (let i = coins.length - 1; i >= 0; i--) {
+                const c = coins[i];
+                c.x -= 0.42;
+                c.mesh.position.x = c.x;
+                c.mesh.rotation.z += 0.08; // spin
+
+                const distX = Math.abs(c.x);
+                const distY = Math.abs(c.mesh.position.y - birdGroup.position.y);
+
+                if (distX < 3 && distY < 3 && !c.collected) {
+                    c.collected = true;
+                    coinsCollected++;
+                    document.getElementById('coins').textContent = coinsCollected;
+                    scene.remove(c.mesh);
+                    coins.splice(i, 1);
+                }
+
+                if (c.x < -25) {
+                    scene.remove(c.mesh);
+                    coins.splice(i, 1);
+                }
+            }
+
+            // Spawn pipes
+            if (frame % 48 === 0) createPipe();
+        }
+
+        function gameLoop() {
+            update();
+            renderer.render(scene, camera);
+            requestAnimationFrame(gameLoop);
+        }
+
+        function flap() {
+            if (!gameRunning || flapCooldown > 0) return;
+            velocity = -3.1;
+            flapCooldown = 8;
+        }
+
+        function startGame() {
+            document.getElementById('menu').style.display = 'none';
+            gameRunning = true;
+            
+            birdGroup.position.y = 6;
+            velocity = 0;
+            score = 0;
+            coinsCollected = 0;
+            document.getElementById('score').textContent = '0';
+            document.getElementById('coins').textContent = '0';
+
+            // Clear old objects
+            pipes.forEach(p => {
+                scene.remove(p.top); 
+                scene.remove(p.bottom);
+            });
+            coins.forEach(c => scene.remove(c.mesh));
+            pipes = [];
+            coins = [];
+
+            createPipe();
+        }
+
+        function endGame() {
+            gameRunning = false;
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalCoins').textContent = coinsCollected;
+            document.getElementById('gameOver').style.display = 'flex';
+        }
+
+        function restartGame() {
+            document.getElementById('gameOver').style.display = 'none';
+            startGame();
+        }
+
+        // Controls
+        window.addEventListener('click', flap);
+        window.addEventListener('touchstart', e => { 
+            e.preventDefault(); 
+            flap(); 
+        });
+        window.addEventListener('keydown', e => {
+            if (e.key === ' ' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                flap();
+            }
+        });
+
+        // Cooldown for flap
+        setInterval(() => {
+            if (flapCooldown > 0) flapCooldown--;
+        }, 16);
+
+        // Start
+        document.getElementById('menu').style.display = 'flex';
+        createPipe();
+        gameLoop();
+
+        // Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
